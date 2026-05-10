@@ -1,0 +1,35 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import confusion_matrix
+
+df = pd.read_csv("fusion_results_best.csv")
+
+labels = df["label"].values
+preds = df["pred"].values
+scores = df["score"].values
+
+# CONFUSION MATRIX
+cm = confusion_matrix(labels, preds, labels=[0,1])
+
+plt.figure()
+sns.heatmap(cm, annot=True, fmt="d", cmap="Blues")
+plt.title("Confusion Matrix")
+plt.show()
+
+# SCORE DISTRIBUTION
+plt.figure()
+plt.hist(scores[labels==0], bins=20, alpha=0.6, label="Healthy")
+plt.hist(scores[labels==1], bins=20, alpha=0.6, label="Fault")
+plt.legend()
+plt.title("Score Distribution")
+plt.show()
+
+# RUL
+rul = 1 - scores
+
+plt.figure()
+plt.plot(rul, marker="o")
+plt.title("RUL Trend")
+plt.show()
