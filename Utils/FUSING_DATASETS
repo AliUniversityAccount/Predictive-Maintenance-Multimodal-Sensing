@@ -1,0 +1,47 @@
+import pandas as pd
+import re
+import os
+
+healthy_file = r"C:\Users\ALI\Downloads\MVS\data_processed\final\MASTER_30_PI_HEALTHY.csv"
+unhealthy_file = r"C:\Users\ALI\Downloads\MVS\data_processed\final\MASTER_30_PI_UNHEALTHY.csv"
+
+output_file = r"C:\Users\ALI\Downloads\MVS\data_processed\final\MASTER_PI_FINAL.csv"
+
+df_h = pd.read_csv(healthy_file)
+df_u = pd.read_csv(unhealthy_file)
+
+df_h["label"] = 0
+df_u["label"] = 1
+
+def extract_timestamp(img):
+    nums = re.findall(r'\d+', str(img))
+    if len(nums) == 0:
+        return None
+    try:
+        return int(nums[-1])
+    except:
+        return None
+
+df_h["timestamp"] = df_h["image"].apply(extract_timestamp)
+df_u["timestamp"] = df_u["image"].apply(extract_timestamp)
+
+
+df_h = df_h.dropna(subset=["timestamp"])
+df_u = df_u.dropna(subset=["timestamp"])
+
+df_h["source"] = "healthy"
+df_u["source"] = "unhealthy"
+
+common_cols = list(set(df_h.columns).intersection(set(df_u.columns)))
+df_h = df_h[common_cols]
+df_u = df_u[common_cols]
+
+df = pd.concat([df_h, df_u], ignore_index=True)
+
+df = df.sort_values(by="timestamp").reset_index(drop=True)
+
+df.to_csv(output_file, index=False)
+
+print("FUSED DATASET CREATED")
+print("Saved:", output_file)
+print("Shape:", df.shape)
