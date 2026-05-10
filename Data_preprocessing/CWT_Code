@@ -1,0 +1,143 @@
+#CWT code with vibration timestamp alignment
+import os
+import re
+from datetime import datetime, timedelta
+import pandas as pd
+import numpy as np
+import pywt
+from skimage.transform import resize
+import matplotlib.pyplot as plt
+
+fs = 12000
+
+image_folder = r"C:\Users\ALI\Downloads\MVS\HikRobot\Unhealthy_MV\50percentunhealthy_mv"
+csv_file = r"C:\Users\ALI\Downloads\MVS\vibrationdata_highcost\50_unhealthyMV.csv"
+save_folder = r"C:\Users\ALI\Downloads\MVS\HikRobot\CWT_unhealthy\50percentunhealthy"
+
+os.makedirs(save_folder, exist_ok=True)
+
+signal_cols = [
+    'Joint 2 Acceleration - X',
+    'Joint 2 Acceleration - Y',
+    'Joint 2 Acceleration - Z',
+    'Joint 3 Acceleration - X',
+    'Joint 3 Acceleration - Y',
+    'Joint 3 Acceleration - Z'
+]
+
+df = pd.read_csv(csv_file)
+df["Timestamp"] = pd.to_datetime(df["Timestamp"])
+df = df.sort_values("Timestamp").set_index("Timestamp")
+
+def extract_timestamp(filename):
+    match = re.search(r'(\d{14,17})', filename)
+    if not match:
+        return None
+    ts = match.group(1)
+    try:
+        return datetime.strptime(ts[:14], "%Y%m%d%H%M%S")
+    except:
+        return None
+
+def closest_timestamp(target, index):
+    idx = index.get_indexer([target], method="nearest")[0]
+    return index[idx]
+
+def compute_cwt(sig):
+    freqs = np.linspace(50, 3000, 64)
+    scales = pywt.central_frequency('cmor1.5-1.0') * fs / freqs
+
+    cwt, _ = pywt.cwt(sig, scales, 'cmor1.5-1.0', sampling_period=1/fs)
+    cwt = np.log1p(np.abs(cwt))
+    cwt = resize(cwt, (128, 128), mode='reflect', anti_aliasing=True)
+
+    return (cwt - cwt.min()) / (cwt.max() - cwt.min() + 1e-8)
+
+image_files = sorted([f for f in os.listdir(image_folder) if f.lower().endswith(".jpg")])
+
+image_times = []
+valid_files = []
+
+for file in image_files:
+    ts = extract_timestamp(file)
+    if ts is not None:
+        image_times.append(ts)
+        valid_files.append(file)
+    else:
+        print(f"No timestamp: {file}")
+
+# Sort both lists together
+image_times, valid_files = zip(*sorted(zip(image_times, valid_files)))
+
+#MAIN
+for i, file in enumerate(valid_files):
+
+    img_time = image_times[i]
+
+    if i == 0:
+        # FIRST IMAGE
+        start = img_time - timedelta(seconds=3)
+        end = image_times[i+1]
+
+    elif i == len(valid_files) - 1:
+        # LAST IMAGE 
+        start = image_times[i-1]
+        end = img_time + timedelta(seconds=3)
+
+    else:
+        # MIDDLE IMAGES 
+        start = image_times[i-1]
+        end = image_times[i+1]
+
+    # ALIGN TO VIBRATION DATA
+    vib_start = closest_timestamp(start, df.index)
+    vib_end = closest_timestamp(end, df.index)
+
+    window_df = df.loc[vib_start:vib_end]
+
+    if len(window_df) < 10:
+        print(f"Not enough data for {file}")
+        continue
+
+    fig, axes = plt.subplots(2, 3, figsize=(15, 8))
+    axes = axes.flatten()
+
+    for j, col in enumerate(signal_cols):
+
+        sig = window_df[col].values
+        cwt = compute_cwt(sig)
+
+        ax = axes[j]
+        ax.imshow(cwt, aspect='auto', cmap='jet', origin='lower')
+
+        total_duration = (end - start).total_seconds()
+
+        if total_duration == 0:
+            center_idx = 64
+        else:
+            relative_pos = (img_time - start).total_seconds() / total_duration
+            center_idx = int(relative_pos * 128)
+
+        ax.axvline(center_idx, color='white', linestyle='dotted', linewidth=2)
+
+        ax.set_title(f"{col}\nImage: {img_time.strftime('%H:%M:%S')}")
+
+        ax.set_xticks([0, 32, 64, 96, 127])
+        ax.set_xticklabels([
+            f"{(start - img_time).total_seconds():.1f}s",
+            "",
+            "0s",
+            "",
+            f"{(end - img_time).total_seconds():.1f}s"
+        ])
+
+    plt.suptitle(f"CWT Fusion - {file}", fontsize=14)
+    plt.tight_layout()
+
+    save_path = os.path.join(save_folder, file.replace(".jpg", "_CWT.png"))
+    plt.savefig(save_path, dpi=300)
+    plt.close()
+
+    print(f"Saved: {save_path}")
+
+print("\nALL CWT IMAGES GENERATED SUCCESSFULLY")
