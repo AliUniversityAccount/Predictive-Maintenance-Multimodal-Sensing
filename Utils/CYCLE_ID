@@ -1,0 +1,51 @@
+import pandas as pd
+import re
+
+input_file = r"C:\Users\ALI\Downloads\MVS\data_processed\final\MASTER_MV.csv"
+output_file = r"C:\Users\ALI\Downloads\MVS\data_processed\final\MASTER_MV_FINAL.csv"
+
+df = pd.read_csv(input_file)
+
+# clean columns
+df.columns = df.columns.str.strip().str.lower()
+
+if "image" not in df.columns:
+    raise ValueError("Missing 'image' column")
+
+if "label" not in df.columns:
+    raise ValueError("Missing 'label' column (0=healthy,1=unhealthy)")
+
+def get_index(img):
+    nums = re.findall(r'\d+', str(img))
+    if len(nums) == 0:
+        return -1
+    return int(nums[-1])
+
+df["img_index"] = df["image"].apply(get_index)
+df = df[df["img_index"] != -1].copy()
+
+df_h = df[df["label"] == 0].copy()
+df_u = df[df["label"] == 1].copy()
+
+df_h["cycle_id"] = df_h["img_index"] % 4
+df_u["cycle_id"] = df_u["img_index"] % 4
+
+df_u["cycle_id"] = df_u["cycle_id"] + 4   # unhealthy cycles = 4,5,6,7
+
+df_final = pd.concat([df_h, df_u], ignore_index=True)
+
+df_final = df_final.sort_values(["label", "cycle_id", "img_index"]).reset_index(drop=True)
+
+df_final.to_csv(output_file, index=False)
+
+print("Cycle dataset created successfully!")
+print("Saved to:", output_file)
+
+print("\nCycle distribution:")
+print(df_final["cycle_id"].value_counts())
+
+print("\nLabel distribution:")
+print(df_final["label"].value_counts())
+
+print("\nSample rows:")
+print(df_final[["image", "label", "cycle_id"]].head(15))
